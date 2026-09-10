@@ -24,6 +24,8 @@
 
 Docker 安装、HTTPS、持久化和升级步骤见 [部署说明](docs/DEPLOYMENT.md)。
 
+无需克隆源码即可使用镜像部署：文档提供可直接复制的 [docker run 命令](docs/DEPLOYMENT.md#方式一docker-run) 和 [独立 compose.yml 配置](docs/DEPLOYMENT.md#方式二独立-composeyml)。
+
 ## 快速启动
 
 要求 Node.js 24 LTS、npm 11。在项目根目录执行：
