@@ -1,0 +1,36 @@
+{
+  "name": "mlclaw",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/mengluo04/MlClaw.git" },
+  "description": "MlClaw server-hosted personal AI assistant",
+  "applicationId": "vip.mengluo.mlclaw",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "node --import tsx --test apps/server/test/*.test.ts",
+    "test:browser": "node --import tsx tests/browser.ts",
+    "test:production:browser": "node tests/production-browser.mjs",
+    "test:container": "node tests/container-smoke.mjs",
+    "test:model": "node --import tsx tests/real-model.ts",
+    "test:executor:docker": "node --import tsx tests/docker.ts",
+    "dev": "concurrently -k -n server,web \"npm run dev -w @mlclaw/server\" \"npm run dev -w @mlclaw/web\"",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "start": "npm run start -w @mlclaw/server"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.5.0",
+    "concurrently": "^10.0.5",
+    "tsx": "^4.23.13",
+    "typescript": "5.9.3"
+  }
+}

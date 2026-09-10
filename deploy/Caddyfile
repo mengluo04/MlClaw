@@ -1,0 +1,8 @@
+{$MLCLAW_DOMAIN} {
+    reverse_proxy mlclaw:3000 {
+        flush_interval -1
+        transport http {
+            response_header_timeout 30s
+        }
+    }
+}

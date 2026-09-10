@@ -1,0 +1,25 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+data/
+workspace/
+*.log
+*.tsbuildinfo
+.arts/
+
+# 本机协作配置和内部文档不纳入公开仓库。
+AGENTS.md
+.codex/
+.idea/
+.vscode/
+/docs/*
+!/docs/LOCAL_USAGE.md
+!/docs/DEPLOYMENT.md
+!/docs/CHANNELS.md
+!/docs/SCHEDULES.md
+!/docs/WEB_SEARCH.md
+!/docs/CONTEXT_MEMORY.md
+!/docs/SKILLS.md
+!/docs/THIRD_PARTY_NOTICES.md
