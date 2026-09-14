@@ -24,6 +24,37 @@ MlClaw 面向单用户使用，采用 TypeScript、Fastify、Vue 3 和 SQLite，
 
 模型接口目前支持 **OpenAI Chat Completions 兼容协议**。工具调用、搜索和渠道收发的实际效果取决于所选模型、服务配置及平台权限。
 
+## 模型与提供商列表
+
+“模型服务”内置以下提供商预设，可直接选择后填写密钥。具体模型 ID 从提供商获取或手动添加，以对应账号和地域的可用列表为准；预设不代表该服务的所有模型均已验证。
+
+| 模型 / 服务名称        | 接入说明                                  | 官方文档                                                                                                       |
+| ---------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| OpenAI                 | 使用 Chat Completions 接口                | [API 文档](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) |
+| Google / Gemini        | 使用 Gemini 的 OpenAI 兼容接口            | [兼容接口文档](https://ai.google.dev/gemini-api/docs/openai)                                                   |
+| DeepSeek               | 使用 DeepSeek API                         | [接入文档](https://api-docs.deepseek.com/)                                                                     |
+| 阿里云百炼 / 通义千问  | 使用兼容模式，注意密钥与服务地域一致      | [兼容接口文档](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope)                 |
+| 月之暗面 / Kimi        | 使用 Kimi API，按账号添加模型             | [模型列表文档](https://platform.kimi.com/docs/api/list-models)                                                 |
+| 火山方舟 / 豆包        | 按控制台填写模型 ID 或推理接入点 ID       | [OpenAI SDK 兼容文档](https://www.volcengine.com/docs/82379/1330626?lang=zh)                                   |
+| 智谱 / GLM             | 使用普通 API；套餐专用接口需调整地址      | [接入文档](https://docs.bigmodel.cn/cn/api/introduction)                                                       |
+| MiniMax                | 使用 OpenAI 兼容接口                      | [模型调用文档](https://platform.minimax.cn/docs/guides/text-generation)                                        |
+| 硅基流动 / SiliconFlow | 从平台模型列表选择支持对话的模型          | [快速开始](https://docs.siliconflow.cn/docs/userguide/quickstart)                                              |
+| Groq                   | 使用 OpenAI 兼容接口                      | [兼容接口文档](https://console.groq.com/docs/openai)                                                           |
+| Mistral AI             | 使用 Chat Completions，可获取平台模型列表 | [模型列表文档](https://docs.mistral.ai/api/endpoint/models)                                                    |
+
+也支持“自定义提供商”：填写其他 OpenAI 兼容服务的基础地址、密钥及模型 ID。当前不直接支持 Claude 原生 Messages、Gemini 原生协议或 OpenAI Responses 接口；使用工具时请选择支持工具调用的对话模型。
+
+## 消息渠道列表
+
+| 渠道名称            | MlClaw 中的用途                                                            | 文档 / 项目地址                                                                                                                           |
+| ------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| QQ 官方机器人       | 本人私聊文本对话、定时任务结果推送                                         | [QQ 开放平台](https://q.qq.com/) · [机器人接入文档](https://bot.q.qq.com/wiki/)                                                           |
+| 微信机器人（iLink） | 扫码连接后绑定本人，支持私聊文本对话和定时结果推送                         | [腾讯项目](https://github.com/Tencent/openclaw-weixin) · [中文说明](https://github.com/Tencent/openclaw-weixin/blob/main/README.zh_CN.md) |
+| 邮箱（SMTP）        | 通过已配置的邮箱服务器发送定时任务结果                                     | [SMTP 配置文档](https://nodemailer.com/smtp) · [Nodemailer 项目](https://github.com/nodemailer/nodemailer)                                |
+| 自定义 Webhook      | 将定时结果发送到指定 HTTP/HTTPS 地址，支持自定义请求方式、Headers 和请求体 | [HTTP 协议文档](https://www.rfc-editor.org/rfc/rfc9110.html) · [配置步骤](#将结果推送到邮箱或-webhook)                                    |
+
+QQ／微信在 MlClaw 的“消息渠道”中配置和绑定，具体步骤见下方使用说明。微信项目链接用于查询渠道资料，无需另外安装该项目。邮箱和 Webhook 是通用出站通道，没有统一的平台账号入口，服务器地址或请求格式由你使用的服务提供。
+
 ## 快速开始
 
 先获取代码：
