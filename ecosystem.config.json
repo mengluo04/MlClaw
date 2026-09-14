@@ -1,0 +1,14 @@
+{
+  "apps": [
+    {
+      "name": "mlclaw",
+      "cwd": "./apps/server",
+      "script": "dist/index.js",
+      "exec_mode": "fork",
+      "instances": 1,
+      "watch": false,
+      "restart_delay": 3000,
+      "kill_timeout": 15000
+    }
+  ]
+}

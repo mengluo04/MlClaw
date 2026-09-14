@@ -1,0 +1,16 @@
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+data/
+workspace/
+.arts/
+.codeartsdoer/
+coverage/
+*.log
+*.tsbuildinfo
+apps/web/auto-imports.d.ts
+apps/web/components.d.ts
+.env
+.env.*
+!.env.example

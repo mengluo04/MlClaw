@@ -1,0 +1,31 @@
+{
+  "name": "mlclaw",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MlClaw server-hosted personal AI assistant",
+  "applicationId": "vip.mengluo.mlclaw",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "dev": "concurrently -k -n server,web \"npm run dev -w @mlclaw/server\" \"npm run dev -w @mlclaw/web\"",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "start": "npm run start -w @mlclaw/server"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.5.0",
+    "concurrently": "^10.0.5",
+    "prettier": "3.9.6",
+    "tsx": "^4.23.13",
+    "typescript": "5.9.3"
+  }
+}

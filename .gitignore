@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+data/
+workspace/
+*.log
+*.tsbuildinfo
+docs/account.md
+
+# 本机启动配置可能包含执行服务令牌
+config.json
