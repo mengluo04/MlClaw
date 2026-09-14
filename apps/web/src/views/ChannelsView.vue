@@ -5,6 +5,8 @@ import { confirmAction } from '../composables/confirm';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import type {
   ChannelAccountView,
+  BotChannelKind,
+  ChannelKind,
   EmailConfig,
   ChannelSettings,
   WeixinLoginView,
@@ -12,6 +14,94 @@ import type {
 } from '@mlclaw/shared';
 import { api, ApiError } from '../api';
 
+const botCards: Array<{
+  kind: BotChannelKind;
+  name: string;
+  idLabel: string;
+  secretLabel: string;
+  hint: string;
+}> = [
+  {
+    kind: 'telegram',
+    name: 'Telegram',
+    idLabel: '机器人数字 ID',
+    secretLabel: 'Bot Token',
+    hint: '从 BotFather 获取 Token；数字 ID 是 Token 冒号前的部分。使用长轮询，不能同时配置 Telegram Webhook 或运行其他轮询实例。',
+  },
+  {
+    kind: 'slack',
+    name: 'Slack',
+    idLabel: '工作区 ID',
+    secretLabel: 'Bot Token（xoxb）',
+    hint: '启用 Socket Mode，订阅 message.im，授予 im:history、im:write、chat:write；App Token 需要 connections:write。两个 Token 必须属于同一个已安装应用。',
+  },
+  {
+    kind: 'discord',
+    name: 'Discord',
+    idLabel: '机器人用户 ID',
+    secretLabel: 'Bot Token',
+    hint: '使用机器人 Token 和 Gateway 私聊事件。将应用安装到服务器后向机器人私聊；受 Discord 私信权限限制。',
+  },
+  {
+    kind: 'dingtalk',
+    name: '钉钉',
+    idLabel: 'Client ID（AppKey / RobotCode）',
+    secretLabel: 'Client Secret',
+    hint: '创建企业内部应用机器人，启用 Stream 模式并发布；开通机器人单聊消息发送权限，将本人加入应用可见范围。',
+  },
+  {
+    kind: 'feishu',
+    name: '飞书',
+    idLabel: 'App ID',
+    secretLabel: 'App Secret',
+    hint: '企业自建应用启用机器人和长连接，订阅 im.message.receive_v1，开通单聊消息读取与 im:message:send_as_bot 权限，发布并授权给本人。',
+  },
+  {
+    kind: 'wecom',
+    name: 'WeCom Bot',
+    idLabel: '配置名称（英文、数字或下划线）',
+    secretLabel: '企业微信群 Webhook 地址',
+    hint: '仅向配置的企业微信群推送定时任务结果，不接收聊天。群内成员均可看到推送；Webhook 地址包含密钥，保存后不回显。',
+  },
+];
+const botDrafts = ref<Record<string, { appId: string; secret: string; appToken: string }>>(
+  Object.fromEntries(botCards.map((c) => [c.kind, { appId: '', secret: '', appToken: '' }])),
+);
+const names: Record<ChannelKind, string> = {
+  qq: 'QQ',
+  weixin: '微信',
+  webhook: 'Webhook',
+  email: '邮箱',
+  telegram: 'Telegram',
+  slack: 'Slack',
+  discord: 'Discord',
+  dingtalk: '钉钉',
+  feishu: '飞书',
+  wecom: 'WeCom Bot',
+};
+const outbound = (kind: string) => ['webhook', 'email', 'wecom'].includes(kind);
+const botDirty = (kind: string) => {
+  const draft = botDrafts.value[kind];
+  return (
+    !!draft &&
+    (!!draft.secret ||
+      !!draft.appToken ||
+      draft.appId !== (settings.value.accounts.find((a) => a.kind === kind)?.remoteId ?? ''))
+  );
+};
+const saveBot = (kind: BotChannelKind) =>
+  action(async () => {
+    const draft = botDrafts.value[kind]!;
+    await api(`/channels/${kind}`, 'PUT', {
+      appId: draft.appId,
+      ...(draft.secret ? { secret: draft.secret } : {}),
+      ...(draft.appToken ? { appToken: draft.appToken } : {}),
+    });
+    draft.secret = '';
+    draft.appToken = '';
+    pairing.value = null;
+    notice.value = `${names[kind]}配置已保存，请重新启用${kind === 'wecom' ? '' : '并绑定本人'}；定时任务需要重新选择投递渠道`;
+  });
 /** 当前用户的登录与助手状态。 */
 const session = useSession();
 /** 当前功能设置。 */
@@ -109,7 +199,8 @@ const dirty = computed(
     (!!appSecret.value ||
       appId.value !== (qq.value?.remoteId ?? '') ||
       webhookDirty.value ||
-      emailDirty.value),
+      emailDirty.value ||
+      botCards.some((c) => botDirty(c.kind))),
 );
 useDirtyGuard(dirty);
 /** 是否正在提交登录。 */
@@ -143,6 +234,11 @@ const load = async () => {
   if (!alive) return;
   const syncWebhook = !loaded.value || !webhookDirty.value;
   const syncEmail = !loaded.value || !emailDirty.value;
+  for (const card of botCards) {
+    if (!loaded.value || !botDirty(card.kind))
+      botDrafts.value[card.kind]!.appId =
+        result.accounts.find((a) => a.kind === card.kind)?.remoteId ?? '';
+  }
   settings.value = result;
   if (syncEmail) resetEmail();
   if (syncWebhook) resetWebhook();
@@ -275,6 +371,9 @@ const remove = async (account: ChannelAccountView) => {
       appId.value = '';
       appSecret.value = '';
     }
+    if (botDrafts.value[account.kind]) {
+      botDrafts.value[account.kind] = { appId: '', secret: '', appToken: '' };
+    }
     pairing.value = null;
     notice.value = '渠道已移除；如需撤销平台授权，请同时在平台管理连接';
   });
@@ -334,7 +433,7 @@ onUnmounted(() => {
         <el-alert v-if="notice" :title="notice" type="info" :closable="false" show-icon />
         <p v-if="!loaded">正在读取渠道配置…</p>
         <p v-else-if="!settings.accounts.length">
-          还没有连接渠道，请配置 QQ、微信、邮箱或 Webhook。
+          还没有连接渠道，请选择下方机器人、邮箱或 Webhook 完成配置。
         </p>
         <div class="channel-grid">
           <article
@@ -343,22 +442,63 @@ onUnmounted(() => {
               { kind: 'email', label: '邮箱配置' },
               { kind: 'qq', label: 'QQ 机器人配置' },
               { kind: 'weixin', label: '微信机器人配置' },
+              ...botCards.map((c) => ({ kind: c.kind, label: `${c.name}配置` })),
             ]"
             :key="channel.kind"
             :aria-label="channel.label"
           >
-            <h3>
-              {{
-                channel.kind === 'email'
-                  ? '邮箱'
-                  : channel.kind === 'webhook'
-                    ? 'Webhook'
-                    : channel.kind === 'qq'
-                      ? 'QQ 机器人'
-                      : '微信机器人'
-              }}
-            </h3>
-            <template v-if="channel.kind === 'webhook'">
+            <h3>{{ names[channel.kind as ChannelKind] }}</h3>
+            <template v-if="botCards.some((c) => c.kind === channel.kind)">
+              <template
+                v-for="card in botCards.filter((c) => c.kind === channel.kind)"
+                :key="card.kind"
+              >
+                <p>{{ card.hint }}</p>
+                <p>
+                  凭据留空保留；更换应用标识需重新填写。每次保存会停止渠道并撤销旧绑定与定时投递授权。
+                </p>
+                <el-form
+                  label-position="top"
+                  :disabled="busy || !loaded"
+                  @submit.prevent="saveBot(card.kind)"
+                >
+                  <el-form-item :label="card.idLabel">
+                    <el-input
+                      v-model="botDrafts[card.kind]!.appId"
+                      :aria-label="`${card.name} ${card.idLabel}`"
+                      maxlength="128"
+                      required
+                    />
+                  </el-form-item>
+                  <el-form-item :label="card.secretLabel">
+                    <el-input
+                      v-model="botDrafts[card.kind]!.secret"
+                      :aria-label="`${card.name} ${card.secretLabel}`"
+                      type="password"
+                      show-password
+                      autocomplete="new-password"
+                      maxlength="4096"
+                      placeholder="已保存时留空保留"
+                    />
+                  </el-form-item>
+                  <el-form-item v-if="card.kind === 'slack'" label="App Token（xapp）">
+                    <el-input
+                      v-model="botDrafts[card.kind]!.appToken"
+                      aria-label="Slack App Token（xapp）"
+                      type="password"
+                      show-password
+                      autocomplete="new-password"
+                      maxlength="4096"
+                      placeholder="已保存时留空保留"
+                    />
+                  </el-form-item>
+                  <el-button type="primary" native-type="submit" :disabled="busy || !loaded"
+                    >保存{{ card.name }}配置</el-button
+                  >
+                </el-form>
+              </template>
+            </template>
+            <template v-else-if="channel.kind === 'webhook'">
               <p>
                 按配置的 HTTP
                 请求推送定时任务结果，无需身份绑定。可按接收端要求设置请求方式、Headers 和请求体。
@@ -605,27 +745,18 @@ onUnmounted(() => {
             <section
               v-for="account in settings.accounts.filter((item) => item.kind === channel.kind)"
               :key="account.id"
-              :aria-label="`${account.kind === 'email' ? '邮箱' : account.kind === 'qq' ? 'QQ' : account.kind === 'webhook' ? 'Webhook' : '微信'}渠道状态`"
+              :aria-label="`${account.displayName}渠道状态`"
             >
               <h3>
-                {{
-                  account.kind === 'email'
-                    ? '邮箱'
-                    : account.kind === 'qq'
-                      ? 'QQ'
-                      : account.kind === 'webhook'
-                        ? 'Webhook'
-                        : '微信'
-                }}
+                {{ account.displayName }}
                 ·
                 {{
-                  (account.kind === 'webhook' || account.kind === 'email') &&
-                  account.state === 'connected'
+                  outbound(account.kind) && account.state === 'connected'
                     ? '已启用'
                     : stateLabels[account.state]
                 }}
               </h3>
-              <p v-if="account.kind !== 'webhook' && account.kind !== 'email'">
+              <p v-if="!outbound(account.kind)">
                 机器人标识：{{ account.remoteId }} · 凭据{{
                   account.hasCredential ? '已保存' : '未配置'
                 }}
@@ -634,24 +765,23 @@ onUnmounted(() => {
                 收件邮箱：{{ account.email?.to }}；发送状态见定时任务执行历史。已发送表示 SMTP
                 服务器已接受，不代表已送达或已读。
               </p>
+              <p v-else-if="account.kind === 'wecom'">
+                企业微信群接收地址已保存；实际投递结果请在定时任务历史中查看。
+              </p>
               <p v-else>
                 接收地址已保存 · {{ account.webhook?.method ?? 'POST' }} ·
                 {{ account.webhook?.headerNames.length ?? 0 }} 个
                 Header；定时投递状态请在执行历史查看。
               </p>
               <p v-if="account.message">{{ account.message }}</p>
-              <p v-if="account.kind !== 'webhook' && account.kind !== 'email'">
+              <p v-if="!outbound(account.kind)">
                 {{
                   account.pairedSender
                     ? `已绑定身份：${account.pairedSender}`
                     : '尚未绑定身份。连接机器人后，生成绑定码，再用本人账号发送给该机器人。'
                 }}
               </p>
-              <p
-                v-if="
-                  account.kind !== 'webhook' && account.kind !== 'email' && account.pairedSender
-                "
-              >
+              <p v-if="!outbound(account.kind) && account.pairedSender">
                 当前支持私聊文本；向该机器人发送 /stop 可取消当前渠道任务。
               </p>
               <el-space wrap>
@@ -663,7 +793,7 @@ onUnmounted(() => {
                   @click="toggle(account, true)"
                   native-type="submit"
                   >{{
-                    account.kind === 'webhook' || account.kind === 'email'
+                    outbound(account.kind)
                       ? account.enabled
                         ? '重新启用'
                         : '启用渠道'
@@ -679,16 +809,14 @@ onUnmounted(() => {
                   >停止渠道</el-button
                 >
                 <el-button
-                  v-if="
-                    account.kind !== 'webhook' && account.kind !== 'email' && !account.pairedSender
-                  "
+                  v-if="!outbound(account.kind) && !account.pairedSender"
                   :disabled="busy || !account.enabled"
                   @click="bind(account)"
                   native-type="submit"
-                  >生成{{ account.kind === 'qq' ? 'QQ' : '微信' }}绑定码</el-button
+                  >生成{{ account.displayName }}绑定码</el-button
                 >
                 <el-button
-                  v-else-if="account.kind !== 'webhook' && account.kind !== 'email'"
+                  v-else-if="!outbound(account.kind)"
                   :disabled="busy"
                   @click="unbind(account)"
                   native-type="submit"

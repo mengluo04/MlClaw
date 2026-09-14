@@ -144,7 +144,13 @@ export interface ConversationRules {
   content: string;
   version: number;
 }
-export type ChannelKind = 'qq' | 'weixin' | 'webhook' | 'email';
+export type BotChannelKind = 'telegram' | 'slack' | 'discord' | 'dingtalk' | 'feishu' | 'wecom';
+export type ChannelKind = 'qq' | 'weixin' | 'webhook' | 'email' | BotChannelKind;
+export interface BotConfigInput {
+  appId: string;
+  secret?: string;
+  appToken?: string;
+}
 export type WebhookMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 export interface WebhookRequestConfig {
   method: WebhookMethod;

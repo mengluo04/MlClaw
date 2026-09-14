@@ -1,3 +1,6 @@
+import { BotTransport, validateBotConfig } from './bots.js';
+import { channelNames, isOutboundOnly } from './catalog.js';
+import type { BotChannelKind, BotConfigInput } from '@mlclaw/shared';
 import { EmailTransport, validateEmailConfig } from './email.js';
 import { formatSystemTime, parseSystemTime } from '../time.js';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -55,7 +58,9 @@ const defaultFactory: TransportFactory = (account, sink) =>
       ? new WebhookTransport(account, sink)
       : account.kind === 'qq'
         ? new QQTransport(account, sink)
-        : new WeixinTransport(account, sink);
+        : account.kind === 'weixin'
+          ? new WeixinTransport(account, sink)
+          : new BotTransport(account, sink);
 
 export class ChannelManager {
   /** 按渠道账号保存的连接运行实例。 */
@@ -141,20 +146,14 @@ export class ChannelManager {
         /** 待转换为公开展示结构的渠道账号。 */
         const a = this.account(String(row.id), userId);
         return {
-          displayName:
-            (
-              { qq: 'QQ', weixin: '微信', webhook: 'Webhook', email: '邮箱' } as Record<
-                string,
-                string
-              >
-            )[a.kind] ?? a.kind,
+          displayName: channelNames[a.kind],
           scheduleDelivery: {
             available: a.enabled && !!a.pairedSender,
             statusLabel: !a.enabled
               ? '已停用'
               : !a.pairedSender
                 ? '未绑定'
-                : a.kind === 'webhook' || a.kind === 'email'
+                : isOutboundOnly(a.kind)
                   ? '接收地址已配置'
                   : '已绑定本人',
           },
@@ -263,11 +262,66 @@ export class ChannelManager {
         level: 'info',
         source: 'channel',
         event: 'channel.configured',
-        message: `${kind === 'qq' ? 'QQ' : kind === 'webhook' ? 'Webhook' : '微信'}渠道配置已保存`,
+        message: `${channelNames[kind]}渠道配置已保存`,
         entity: { type: 'channel', id },
         metadata: { channelKind: kind },
       });
       return { id };
+    });
+  }
+  async configureBot(userId: string, kind: BotChannelKind, input: BotConfigInput) {
+    validateBotConfig(kind, input);
+    return this.exclusive(`${userId}:${kind}`, async () => {
+      const row = this.db
+        .prepare('SELECT id FROM channel_accounts WHERE user_id=? AND kind=?')
+        .get(userId, kind);
+      const old = row ? this.account(String(row.id), userId) : undefined;
+      const same = old?.remoteId === input.appId;
+      const secret = input.secret ?? (same ? old?.secret : undefined);
+      const appToken =
+        kind === 'slack' ? (input.appToken ?? (same ? old?.baseUrl : undefined)) : '';
+      if (!secret || (kind === 'slack' && !appToken))
+        throw new ChannelError('请填写完整凭据；更换应用标识须重新填写全部凭据');
+      validateBotConfig(kind, {
+        appId: input.appId,
+        secret,
+        ...(kind === 'slack' ? { appToken } : {}),
+      });
+      if (old) await this.disconnect(old.id);
+      const id = old?.id ?? randomUUID();
+      // 每次保存撤销旧绑定及投递快照；更换应用不复用事件去重命名空间。
+      const nextId = old && !same ? randomUUID() : id;
+      transaction(this.db, () => {
+        if (old && nextId !== old.id)
+          this.db.prepare('DELETE FROM channel_accounts WHERE id=?').run(old.id);
+        this.db
+          .prepare(
+            `INSERT INTO channel_accounts(id,user_id,kind,remote_id,secret,base_url,paired_sender,binding_version,created_at)
+          VALUES(?,?,?,?,?,?,?,1,?) ON CONFLICT(id) DO UPDATE SET secret=excluded.secret,base_url=excluded.base_url,
+          enabled=0,paired_sender=excluded.paired_sender,binding_version=binding_version+1,
+          pairing_hash=NULL,pairing_expires_at=NULL`,
+          )
+          .run(
+            nextId,
+            userId,
+            kind,
+            input.appId,
+            secret,
+            appToken ?? '',
+            kind === 'wecom' ? 'wecom' : null,
+            now(),
+          );
+      });
+      this.updateState(nextId, 'stopped');
+      this.logs?.record(userId, {
+        level: 'info',
+        source: 'channel',
+        event: 'channel.configured',
+        message: `${channelNames[kind]}渠道配置已保存`,
+        entity: { type: 'channel', id: nextId },
+        metadata: { channelKind: kind },
+      });
+      return { id: nextId };
     });
   }
   async configureEmail(userId: string, input: EmailConfigInput) {
@@ -326,7 +380,7 @@ export class ChannelManager {
         level: 'info',
         source: 'channel',
         event: enabled ? 'channel.enabled' : 'channel.disabled',
-        message: `${account.kind === 'email' ? '邮箱' : account.kind === 'qq' ? 'QQ' : account.kind === 'webhook' ? 'Webhook' : '微信'}渠道已${enabled ? '启用' : '停用'}`,
+        message: `${channelNames[account.kind]}渠道已${enabled ? '启用' : '停用'}`,
         entity: { type: 'channel', id },
         metadata: { channelKind: account.kind },
       });
@@ -342,7 +396,7 @@ export class ChannelManager {
         level: 'info',
         source: 'channel',
         event: 'channel.removed',
-        message: `${account.kind === 'email' ? '邮箱' : account.kind === 'qq' ? 'QQ' : account.kind === 'webhook' ? 'Webhook' : '微信'}渠道已移除`,
+        message: `${channelNames[account.kind]}渠道已移除`,
         entity: { type: 'channel', id },
         metadata: { channelKind: account.kind },
       });
@@ -355,7 +409,7 @@ export class ChannelManager {
   pairCode(id: string, userId: string) {
     /** 当前渠道账号。 */
     const account = this.account(id, userId);
-    if (account.kind === 'webhook' || account.kind === 'email')
+    if (isOutboundOnly(account.kind))
       throw new ChannelError('出站渠道使用管理员配置的接收地址，无需身份绑定');
     if (account.pairedSender) throw new ChannelError('请先解除已有身份绑定', 409);
     /** 当前消息中的协议代码或验证码。 */
@@ -371,7 +425,7 @@ export class ChannelManager {
   async unpair(id: string, userId: string) {
     /** 当前渠道账号。 */
     const account = this.account(id, userId);
-    if (account.kind === 'webhook' || account.kind === 'email')
+    if (isOutboundOnly(account.kind))
       throw new ChannelError('出站渠道无需身份绑定，请停止或移除渠道');
     await this.exclusive(`${userId}:${account.kind}`, async () => {
       await this.disconnect(id);
@@ -454,7 +508,7 @@ export class ChannelManager {
     if (this.stopped) return;
     /** 当前渠道账号。 */
     const account = this.account(accountId);
-    if (!account.enabled || account.kind === 'webhook' || account.kind === 'email') return;
+    if (!account.enabled || isOutboundOnly(account.kind)) return;
     /** 事件标识，用于去重或续传。 */
     const eventId = boundedString(input.eventId);
     /** 渠道消息发送者标识。 */
@@ -550,12 +604,7 @@ export class ChannelManager {
       transaction(this.db, () => {
         this.db
           .prepare('INSERT INTO conversations VALUES(?,?,?,?)')
-          .run(
-            conversationId,
-            account.userId,
-            `${account.kind === 'email' ? '邮箱' : account.kind === 'qq' ? 'QQ' : account.kind === 'webhook' ? 'Webhook' : '微信'}机器人私聊`,
-            now(),
-          );
+          .run(conversationId, account.userId, `${channelNames[account.kind]}机器人私聊`, now());
         this.db
           .prepare('INSERT INTO channel_conversations VALUES(?,?,?)')
           .run(accountId, senderId, conversationId);
@@ -724,14 +773,7 @@ export class ChannelManager {
             ? 'warning'
             : 'info';
       /** 界面展示标签。 */
-      const label =
-        account.kind === 'email'
-          ? '邮箱'
-          : account.kind === 'qq'
-            ? 'QQ'
-            : account.kind === 'webhook'
-              ? 'Webhook'
-              : '微信';
+      const label = channelNames[account.kind];
       /** 渠道连接状态对应的系统日志说明。 */
       const descriptions: Record<ChannelAccountView['state'], string> = {
         stopped: `${label}渠道已停止`,
@@ -813,7 +855,7 @@ export class ChannelManager {
               ? 'QQ 未确认发送，请核对收件及机器人主动消息权限；不会自动重发'
               : target.kind === 'webhook'
                 ? 'Webhook 未确认发送，请核对接收端；不会自动重发'
-                : '微信未确认发送，请核对收件；可向机器人发送消息更新上下文后手动运行，旧结果不会自动重发',
+                : `${channelNames[target.kind]} 未确认发送，请核对收件和平台权限；旧结果不会自动重发`,
           row.occurrence_id!,
         );
       this.logs?.record(String(row.user_id), {
@@ -864,7 +906,7 @@ export class ChannelManager {
         level: 'error',
         source: 'channel',
         event: 'channel.delivery_failed',
-        message: `${account.kind === 'email' ? '邮箱' : account.kind === 'qq' ? 'QQ' : account.kind === 'webhook' ? 'Webhook' : '微信'}消息投递失败或结果未知`,
+        message: `${channelNames[account.kind]}消息投递失败或结果未知`,
         entity: { type: 'channel', id: account.id },
         metadata: {
           channelKind: account.kind,

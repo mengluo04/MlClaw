@@ -2,7 +2,7 @@
 
 **部署在自己服务器上的个人 AI 助手。**
 
-通过网页、QQ 或微信与助手对话，让它帮你搜索资料、整理文件、运行脚本，或按计划完成重复任务。聊天记录、应用配置和工作区文件保存在你的部署环境中；模型推理、联网搜索及消息投递按配置调用相应服务。
+通过网页、QQ、微信、Telegram、Slack、Discord、钉钉或飞书与助手对话，让它帮你搜索资料、整理文件、运行脚本，或按计划完成重复任务。聊天记录、应用配置和工作区文件保存在你的部署环境中；模型推理、联网搜索及消息投递按配置调用相应服务。
 
 MlClaw 面向单用户使用，采用 TypeScript、Fastify、Vue 3 和 SQLite，无需单独安装数据库服务。
 
@@ -18,7 +18,7 @@ MlClaw 面向单用户使用，采用 TypeScript、Fastify、Vue 3 和 SQLite，
 | 会话摘要   | 手动生成摘要，或在模型报告上下文超限后自动压缩并继续对话                               |
 | 技能管理   | 从工作区读取 `SKILL.md` 技能包，按任务需要加载说明和配套文件                           |
 | 定时任务   | 创建只读 AI 任务或脚本任务，支持 Cron、启停、立即运行、取消和执行记录                  |
-| 消息渠道   | 通过 QQ／微信机器人私聊，或将定时任务结果发送到 QQ、微信、邮箱和 Webhook               |
+| 消息渠道   | 支持七类机器人私聊，定时结果可推送到机器人、WeCom Bot、邮箱和 Webhook               |
 | 个性化设置 | 配置助手名称、角色、行为规则、头像，以及网站名称和图标                                 |
 | 运行记录   | 查看任务结果、工具调用、耗时、服务上报用量和系统日志                                   |
 
@@ -52,6 +52,12 @@ MlClaw 面向单用户使用，采用 TypeScript、Fastify、Vue 3 和 SQLite，
 | 微信机器人（iLink） | 扫码连接后绑定本人，支持私聊文本对话和定时结果推送                         | [腾讯项目](https://github.com/Tencent/openclaw-weixin) · [中文说明](https://github.com/Tencent/openclaw-weixin/blob/main/README.zh_CN.md) |
 | 邮箱（SMTP）        | 通过已配置的邮箱服务器发送定时任务结果                                     | [SMTP 配置文档](https://nodemailer.com/smtp) · [Nodemailer 项目](https://github.com/nodemailer/nodemailer)                                |
 | 自定义 Webhook      | 将定时结果发送到指定 HTTP/HTTPS 地址，支持自定义请求方式、Headers 和请求体 | [HTTP 协议文档](https://www.rfc-editor.org/rfc/rfc9110.html) · [配置步骤](#将结果推送到邮箱或-webhook)                                    |
+| Telegram | Bot Token 长轮询，本人私聊文本与定时推送 | [Bot API](https://core.telegram.org/bots/api) |
+| Slack | Socket Mode 本人私聊文本与定时推送 | [Socket Mode](https://docs.slack.dev/apis/events-api/using-socket-mode/) |
+| Discord | Gateway 本人私聊文本与定时推送 | [Gateway 文档](https://docs.discord.com/developers/events/gateway) |
+| 钉钉 | 企业内部应用机器人 Stream 私聊与定时推送 | [官方 Stream 项目](https://github.com/open-dingtalk/dingtalk-stream-sdk-nodejs) |
+| 飞书 | 企业自建应用机器人长连接私聊与定时推送 | [官方 Node SDK](https://github.com/larksuite/node-sdk) |
+| WeCom Bot（企业微信群机器人） | 向指定企业微信群推送定时结果，仅出站 | [群机器人文档](https://developer.work.weixin.qq.com/document/path/91770) |
 
 QQ／微信在 MlClaw 的“消息渠道”中配置和绑定，具体步骤见下方使用说明。微信项目链接用于查询渠道资料，无需另外安装该项目。邮箱和 Webhook 是通用出站通道，没有统一的平台账号入口，服务器地址或请求格式由你使用的服务提供。
 
@@ -178,6 +184,28 @@ workspace/
 | 微信 | 点击“微信扫码连接”，扫码并按提示确认；成功后生成绑定码，再用本人微信向机器人发送完整的 `/bind 绑定码`        |
 
 QQ 需要机器人账号及相应平台权限，不能直接使用普通个人 QQ 登录。每个平台当前支持一个机器人账号、一个绑定身份和私聊文本，不支持群聊或图片、语音收发。在渠道中发送 `/stop` 可以停止该渠道当前任务。
+
+### 连接 Telegram、Slack、Discord、钉钉和飞书
+
+在“消息渠道”填写对应平台的配置，保存并连接，生成绑定码，再用本人账号向机器人私聊发送完整的 `/bind 绑定码`。绑定后支持私聊文本、`/stop` 取消和定时任务结果投递；每个平台一个账号、一个绑定身份，不接入群聊或多媒体。
+
+| 渠道 | 需要填写与平台准备 |
+| ---- | ------------------ |
+| Telegram | 在 BotFather 创建机器人，填写 Bot Token 及其冒号前的数字 ID。使用 `getUpdates` 长轮询，不可同时运行其他轮询实例或配置 Telegram Webhook；应用不会替你删除已有 Webhook。 |
+| Slack | 填写工作区 ID（`T...`）、同一已安装应用的 Bot Token（`xoxb`）和 App Token（`xapp`）。启用 Socket Mode，订阅 `message.im`；Bot 授权 `im:history`、`im:write`、`chat:write`，App Token 授权 `connections:write`，权限变更后重新安装应用。 |
+| Discord | 在开发者平台创建机器人，填写机器人用户 ID 与 Bot Token，将应用安装到服务器后私聊机器人。接收 Direct Messages 事件，不需要读取服务器群消息；确认本人允许相关私信。 |
+| 钉钉 | 创建企业内部应用机器人，填写 Client ID（AppKey / RobotCode）和 Client Secret。开启 Stream 模式并发布，授予机器人单聊消息发送权限，将本人加入应用可见范围。 |
+| 飞书 | 创建企业自建应用，填写 App ID 和 App Secret，启用机器人和长连接，订阅 `im.message.receive_v1`，授予单聊消息读取与 `im:message:send_as_bot` 权限，发布版本并授权给本人。当前使用国内飞书端点。 |
+
+凭据仅保存到服务端，网页不回显；同一应用留空保留，更换应用标识须重新填写全部凭据。上述五个平台每次保存都会停止连接并撤销本人绑定和旧定时投递授权，需要重新连接、绑定，并在计划中重新选择渠道。长轮询或长连接由服务器发起，无需额外公网回调地址；服务器须能访问对应平台。
+
+### 连接 WeCom Bot
+
+在企业微信群添加群机器人，复制 Webhook 地址，在“消息渠道 → WeCom Bot”填写一个英文/数字配置名称和完整地址，保存后启用。编辑定时任务，选择 WeCom Bot，即可把成功结果推送到该群。
+
+仅接受 `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...` 地址，密钥不回显。此渠道不接收聊天、无需本人绑定；群内成员都能看到结果。文本按平台 UTF-8 字节限制截断，全文保留在网页；更换或重新保存配置后，需要在计划中重新选择渠道。
+
+新六渠道已完成本地协议模拟与应用验证；真实账号权限、收发、平台限额和网络连通性仍需用实际账号联调。接口接受消息不代表最终送达或已读，失败或结果未知不会自动重发。
 
 ### 创建定时任务
 

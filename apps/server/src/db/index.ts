@@ -258,6 +258,33 @@ const migrations = [
       throw new Error('邮箱渠道迁移外键校验失败');
   },
   `CREATE TABLE IF NOT EXISTS site_settings (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL);`,
+  (db: DatabaseSync) => {
+    // 扩充 CHECK 约束，保留已有渠道及级联子表的历史与去重记录。
+    const sql = String(
+      db.prepare("SELECT sql FROM sqlite_master WHERE name='channel_accounts'").get()?.sql,
+    );
+    if (sql.includes("'telegram'")) return;
+    db.exec(`CREATE TEMP TABLE bot_conversations AS SELECT * FROM channel_conversations;
+      CREATE TEMP TABLE bot_inbox AS SELECT * FROM channel_inbox;
+      CREATE TEMP TABLE bot_outbox AS SELECT * FROM channel_outbox;
+      CREATE TABLE channel_accounts_new (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+        kind TEXT NOT NULL CHECK(kind IN ('qq','weixin','webhook','email','telegram','slack','discord','dingtalk','feishu','wecom')),
+        remote_id TEXT NOT NULL, secret TEXT NOT NULL, base_url TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 0, cursor TEXT NOT NULL DEFAULT '', paired_sender TEXT,
+        pairing_hash TEXT, pairing_expires_at TEXT, created_at TEXT NOT NULL,
+        binding_version INTEGER NOT NULL DEFAULT 0, webhook_config TEXT, email_config TEXT,
+        UNIQUE(user_id,kind));
+      INSERT INTO channel_accounts_new SELECT * FROM channel_accounts;
+      DROP TABLE channel_accounts;
+      ALTER TABLE channel_accounts_new RENAME TO channel_accounts;
+      INSERT INTO channel_conversations SELECT * FROM bot_conversations;
+      INSERT INTO channel_inbox SELECT * FROM bot_inbox;
+      INSERT INTO channel_outbox SELECT * FROM bot_outbox;
+      DROP TABLE bot_conversations; DROP TABLE bot_inbox; DROP TABLE bot_outbox;`);
+    if (db.prepare('PRAGMA foreign_key_check').all().length)
+      throw new Error('机器人渠道迁移外键校验失败');
+  },
 ];
 
 class LockedDatabase extends DatabaseSync {

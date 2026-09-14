@@ -48,7 +48,18 @@ export const registerScheduleTools = (
     {},
     [],
     () => ({
-      supportedKinds: ['qq', 'weixin', 'webhook', 'email'],
+      supportedKinds: [
+        'qq',
+        'weixin',
+        'webhook',
+        'email',
+        'telegram',
+        'slack',
+        'discord',
+        'dingtalk',
+        'feishu',
+        'wecom',
+      ],
       channels: channels.view(userId).accounts.map((account) => ({
         id: account.id,
         kind: account.kind,

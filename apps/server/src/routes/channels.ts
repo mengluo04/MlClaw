@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type { EmailConfigInput, WebhookConfigInput } from '@mlclaw/shared';
 import type { ChannelManager } from '../channels/manager.js';
 import type { WeixinLogin } from '../channels/login.js';
+import type { BotConfigInput } from '@mlclaw/shared';
+import { botKinds } from '../channels/bots.js';
 
 /** 注册channels相关 HTTP 接口及校验。 */
 export const registerChannels = (
@@ -10,6 +12,25 @@ export const registerChannels = (
   login: WeixinLogin,
 ) => {
   app.get('/api/channels', async (request) => channels.view(request.userId));
+  for (const kind of botKinds)
+    app.put<{ Body: BotConfigInput }>(
+      `/api/channels/${kind}`,
+      {
+        schema: {
+          body: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['appId'],
+            properties: {
+              appId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,128}$' },
+              secret: { type: 'string', minLength: 1, maxLength: 4096 },
+              appToken: { type: 'string', minLength: 1, maxLength: 4096 },
+            },
+          },
+        },
+      },
+      async (request) => channels.configureBot(request.userId, kind, request.body),
+    );
   app.put<{ Body: EmailConfigInput }>(
     '/api/channels/email',
     {
